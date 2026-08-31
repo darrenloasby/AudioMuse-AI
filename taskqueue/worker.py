@@ -736,11 +736,13 @@ class Worker:
 
     def ensure_schema(self):
         from database import _SCHEMA_ADVISORY_LOCK
+        from tasks.analysis.stage_store import ensure_schema as ensure_analysis_stage_schema
 
         with self._conn.cursor() as cur:
             cur.execute("SELECT pg_advisory_lock(%s)", (_SCHEMA_ADVISORY_LOCK,))
             try:
                 sql.ensure_schema(cur)
+                ensure_analysis_stage_schema(cur)
             finally:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (_SCHEMA_ADVISORY_LOCK,))
         self._conn.commit()
