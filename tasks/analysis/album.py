@@ -75,6 +75,7 @@ from ..memory_utils import (
     SessionRecycler,
     comprehensive_memory_cleanup,
 )
+from ..model_lifecycle import should_release_models
 from .. import chromaprint
 from database import (
     persist_chromaprint,
@@ -492,7 +493,11 @@ def _analyze_album_task_impl(album_id, album_name, top_n_moods, parent_task_id):
         tracks_not_analyzable_count = 0
         model_paths = {'embedding': EMBEDDING_MODEL_PATH, 'prediction': PREDICTION_MODEL_PATH}
         onnx_sessions = None
-        recycle_interval = 1 if PER_SONG_MODEL_RELOAD else 20
+        recycle_interval = (
+            None
+            if not should_release_models('album')
+            else 1 if PER_SONG_MODEL_RELOAD else 20
+        )
         session_recycler = SessionRecycler(recycle_interval=recycle_interval)
 
         log_and_update_album_task = make_task_reporter(
@@ -652,10 +657,11 @@ def _analyze_album_task_impl(album_id, album_name, top_n_moods, parent_task_id):
 
             _ah.flush_pending_track_maps(pending_track_maps, map_flush_errors, album_name)
 
-            cleanup_musicnn_sessions(onnx_sessions, context="album end")
-            onnx_sessions = None
-            cleanup_optional_models(context="album end")
-            comprehensive_memory_cleanup(force_cuda=True, reset_onnx_pool=True)
+            if should_release_models('album'):
+                cleanup_musicnn_sessions(onnx_sessions, context="album end")
+                onnx_sessions = None
+                cleanup_optional_models(context="album end")
+                comprehensive_memory_cleanup(force_cuda=True, reset_onnx_pool=True)
 
             _ah.raise_album_failures(failed_tracks, map_flush_errors, total_tracks_in_album)
 
@@ -710,10 +716,11 @@ def _analyze_album_task_impl(album_id, album_name, top_n_moods, parent_task_id):
             )
             raise
         finally:
-            cleanup_musicnn_sessions(onnx_sessions, context="finally")
-            onnx_sessions = None
-            try:
-                comprehensive_memory_cleanup(force_cuda=True, reset_onnx_pool=True)
-            except Exception as e:
-                logger.warning(f"Error during final comprehensive cleanup: {e}")
-            cleanup_optional_models(context="finally")
+            if should_release_models('album'):
+                cleanup_musicnn_sessions(onnx_sessions, context="finally")
+                onnx_sessions = None
+                try:
+                    comprehensive_memory_cleanup(force_cuda=True, reset_onnx_pool=True)
+                except Exception as e:
+                    logger.warning(f"Error during final comprehensive cleanup: {e}")
+                cleanup_optional_models(context="finally")

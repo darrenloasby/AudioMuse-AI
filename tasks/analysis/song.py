@@ -76,11 +76,16 @@ from error.error_dictionary import (
 )
 
 from ..memory_utils import cleanup_cuda_memory, cleanup_onnx_session, comprehensive_memory_cleanup
+from ..model_lifecycle import should_release_models
 
 from ..onnx_utils import create_onnx_session, resolve_providers, run_inference_with_oom_fallback
 
 
 logger = logging.getLogger(__name__)
+
+
+_WORKER_MUSICNN_SESSIONS = None
+_WORKER_MUSICNN_MODEL_PATHS = None
 
 
 DEFINED_TENSOR_NAMES = {
@@ -145,17 +150,33 @@ def run_song_analyzed_hook(item, audio_path, musicnn_analysis, musicnn_embedding
 
 
 def load_musicnn_sessions(model_paths):
+    global _WORKER_MUSICNN_SESSIONS, _WORKER_MUSICNN_MODEL_PATHS
+
+    if not should_release_models('album'):
+        if (
+            _WORKER_MUSICNN_SESSIONS is not None
+            and _WORKER_MUSICNN_MODEL_PATHS == dict(model_paths)
+        ):
+            logger.info("Reusing resident MusiCNN models for worker lifetime")
+            return _WORKER_MUSICNN_SESSIONS
     opts = resolve_providers(allow_coreml=False, label='musicnn')
     try:
         sessions = {n: create_onnx_session(p, opts, label=n) for n, p in model_paths.items()}
         logger.info(f"OK Loaded {len(sessions)} MusiCNN models for album reuse")
+        if not should_release_models('album'):
+            _WORKER_MUSICNN_SESSIONS = sessions
+            _WORKER_MUSICNN_MODEL_PATHS = dict(model_paths)
         return sessions
     except Exception:
         logger.exception("Failed to load MusiCNN models")
         return None
 
 
-def cleanup_musicnn_sessions(onnx_sessions, context=""):
+def cleanup_musicnn_sessions(onnx_sessions, context="", force=False):
+    global _WORKER_MUSICNN_SESSIONS, _WORKER_MUSICNN_MODEL_PATHS
+
+    if not force and not should_release_models('album'):
+        return
     if not onnx_sessions:
         return
     suffix = f" ({context})" if context else ""
@@ -168,6 +189,9 @@ def cleanup_musicnn_sessions(onnx_sessions, context=""):
             logger.exception(f"Error cleaning up {name} session")
         session = None
     gc.collect()
+    if onnx_sessions is _WORKER_MUSICNN_SESSIONS:
+        _WORKER_MUSICNN_SESSIONS = None
+        _WORKER_MUSICNN_MODEL_PATHS = None
 
 
 _OPTIONAL_MODELS = (
@@ -176,7 +200,9 @@ _OPTIONAL_MODELS = (
 )
 
 
-def cleanup_optional_models(context=""):
+def cleanup_optional_models(context="", force=False):
+    if not force and not should_release_models('album'):
+        return
     suffix = f" ({context})" if context else ""
     for label, mod, is_loaded_fn, unload_fn in _OPTIONAL_MODELS:
         try:
@@ -585,7 +611,7 @@ def run_clap_for_track(path, track_name_full, native_audio=None, native_sr=None)
         from ..clap_analyzer import analyze_audio_file
 
         emb, _, _ = analyze_audio_file(path, native_audio=native_audio, native_sr=native_sr)
-        if PER_SONG_MODEL_RELOAD:
+        if PER_SONG_MODEL_RELOAD and should_release_models('song'):
             try:
                 from ..clap_analyzer import unload_clap_audio_only
 
@@ -602,6 +628,18 @@ def run_clap_for_track(path, track_name_full, native_audio=None, native_sr=None)
             exc=e, logger=logger, level=logging.WARNING,
         )
         return None
+
+
+def release_worker_models():
+    """Release the resident analysis sessions during an explicit shutdown."""
+    global _WORKER_MUSICNN_SESSIONS
+
+    cleanup_musicnn_sessions(
+        _WORKER_MUSICNN_SESSIONS,
+        context='worker shutdown',
+        force=True,
+    )
+    cleanup_optional_models(context='worker shutdown', force=True)
 
 
 def compute_other_features_str(clap_embedding, label_embeddings, labels):

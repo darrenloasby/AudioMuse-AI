@@ -338,7 +338,7 @@ def handle_onnx_memory_error(
 
 
 class SessionRecycler:
-    def __init__(self, recycle_interval: int = 20):
+    def __init__(self, recycle_interval: Optional[int] = 20):
         self.recycle_interval = recycle_interval
         self.use_count = 0
 
@@ -346,7 +346,7 @@ class SessionRecycler:
         self.use_count += 1
 
     def should_recycle(self) -> bool:
-        return self.use_count >= self.recycle_interval
+        return self.recycle_interval is not None and self.use_count >= self.recycle_interval
 
     def mark_recycled(self) -> None:
         old_count = self.use_count

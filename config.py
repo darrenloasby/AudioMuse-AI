@@ -1078,6 +1078,15 @@ CLAP_PYTHON_MULTITHREADS = os.environ.get("CLAP_PYTHON_MULTITHREADS", "False").l
 #   Cons: May see gradual VRAM growth on some systems
 PER_SONG_MODEL_RELOAD = os.environ.get("PER_SONG_MODEL_RELOAD", "true").lower() == "true"
 
+# Lifetime of resident analysis model sessions in native workers:
+# - song (default): preserve the existing per-song cleanup behavior
+# - album: retain sessions through an album, then release them
+# - worker: retain sessions across queue jobs until shutdown
+# - idle: currently retains like worker; an idle eviction timer may be added later
+# Invalid values fall back to song so an old or mistyped deployment remains safe.
+_MODEL_LIFETIME = os.environ.get("MODEL_LIFETIME", "song").strip().lower()
+MODEL_LIFETIME = _MODEL_LIFETIME if _MODEL_LIFETIME in {"song", "album", "worker", "idle"} else "song"
+
 # Maximum number of spectrogram patches sent through the MusiCNN embedding
 # model in a single ONNX inference call. Running a whole track as one batch
 # (the previous behavior) makes the convolution activations peak at several

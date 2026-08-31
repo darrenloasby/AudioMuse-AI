@@ -567,6 +567,11 @@ class Worker:
         return config.TASK_STATUS_FAIL, summary, None
 
     def _unload_job_models(self):
+        from tasks.model_lifecycle import should_release_models
+
+        if not should_release_models('job'):
+            logger.info("Keeping analysis models resident for worker lifetime")
+            return
         if not self._unload_resident_models():
             return
         try:
@@ -575,6 +580,24 @@ class Worker:
             release_memory_to_os()
         except Exception:
             logger.debug("Worker job-end heap trim failed", exc_info=True)
+
+    def release_models_for_shutdown(self):
+        """Release resident sessions when a worker is deliberately stopped."""
+        if 'tasks.analysis.song' in sys.modules:
+            try:
+                from tasks.analysis.song import release_worker_models
+
+                release_worker_models()
+            except Exception:
+                logger.debug("Worker shutdown model release failed", exc_info=True)
+        else:
+            self._unload_resident_models()
+        try:
+            from tasks.memory_utils import release_memory_to_os
+
+            release_memory_to_os()
+        except Exception:
+            logger.debug("Worker shutdown heap trim failed", exc_info=True)
 
     def _unload_resident_models(self):
         if 'tasks.analysis.song' in sys.modules:
