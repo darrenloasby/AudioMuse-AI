@@ -30,6 +30,7 @@ from pathlib import Path
 MODEL = Path("model")
 DCLAP_REPO = "NeptuneHub/AudioMuse-AI-DCLAP"
 SAE_REPO = "NeptuneHub/AudioMuse-AI-SAE"
+MODEL_REPO = "NeptuneHub/AudioMuse-AI"
 # Only the two graphs come from the release; the concept catalogue that names
 # their latents ships inside the repository.
 SAE_ASSETS = [
@@ -59,6 +60,11 @@ def _env(name):
     if not value:
         raise SystemExit(f"::error::Required environment variable {name} is not set")
     return value
+
+
+def _model_repo():
+    """Return the canonical model-release repo, independent of source fork."""
+    return os.environ.get("MODEL_REPO", MODEL_REPO)
 
 
 def _gh_download(tag, repo, dest, patterns):
@@ -114,7 +120,7 @@ def assemble():
     model_release = _env("MODEL_RELEASE")
     dclap_release = _env("DCLAP_RELEASE")
     sae_release = os.environ.get("SAE_RELEASE", "v1")
-    repo = _env("GITHUB_REPOSITORY")
+    repo = _model_repo()
     MODEL.mkdir(parents=True, exist_ok=True)
 
     print(f"==> musicnn + CLAP text models (from {model_release})")
