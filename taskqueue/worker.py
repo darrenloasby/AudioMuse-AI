@@ -73,6 +73,7 @@ import queue_names
 import service_roles
 
 from cpu_budget import detect_cpu_count
+from worker_capabilities import configured_capabilities
 
 _QUEUE_FLAG = '--queue'
 
@@ -169,6 +170,7 @@ class Worker:
         self._uncharged = {}
         self._claim_txn = threading.Lock()
         self._fork_jobs = hasattr(os, 'fork') and not getattr(sys, 'frozen', False)
+        self.capabilities = configured_capabilities()
 
     def reconnect(self):
         try:
@@ -279,7 +281,13 @@ class Worker:
         with self._claim_txn:
             try:
                 with self._conn.cursor() as cur:
-                    job = sql.claim(cur, self.queue, time.time(), worker_id=self.identity)
+                    job = sql.claim(
+                        cur,
+                        self.queue,
+                        time.time(),
+                        worker_id=self.identity,
+                        capabilities=getattr(self, 'capabilities', ()),
+                    )
                     if job is not None:
                         sql.hold(cur, job['task_id'])
                         self._held_task_id = job['task_id']

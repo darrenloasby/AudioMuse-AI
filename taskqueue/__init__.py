@@ -158,7 +158,8 @@ def _publish_shared(sql, cur, parent_task_id, shared, kwargs):
 
 def enqueue(func, args=(), kwargs=None, *, task_id, task_type, queue=QUEUE_DEFAULT,
             priority=0, parent_task_id=None, sub_type_identifier=None,
-            max_attempts=None, details=None, conn=None, shared=None):
+            max_attempts=None, details=None, conn=None, shared=None,
+            required_capability=None):
     import psycopg2
 
     if func not in ALLOWED_FUNCS:
@@ -190,6 +191,7 @@ def enqueue(func, args=(), kwargs=None, *, task_id, task_type, queue=QUEUE_DEFAU
                 sub_type_identifier=sub_type_identifier,
                 max_attempts=max_attempts,
                 details=details,
+                required_capability=required_capability,
             )
         except psycopg2.errors.UniqueViolation as exc:
             cur.execute("ROLLBACK TO SAVEPOINT audiomuse_enqueue")

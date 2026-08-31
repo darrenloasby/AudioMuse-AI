@@ -86,7 +86,8 @@ _ADD_COLUMNS = """
       ADD COLUMN IF NOT EXISTS max_attempts INTEGER DEFAULT 3,
       ADD COLUMN IF NOT EXISTS worker_id    TEXT,
       ADD COLUMN IF NOT EXISTS shared_token   TEXT,
-      ADD COLUMN IF NOT EXISTS shared_payload TEXT
+      ADD COLUMN IF NOT EXISTS shared_payload TEXT,
+      ADD COLUMN IF NOT EXISTS required_capability TEXT
 """
 
 _SET_FILLFACTOR = "ALTER TABLE task_status SET (fillfactor = 70)"
@@ -255,13 +256,19 @@ _CREATE_BASE_TABLE = """
         details TEXT,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         start_time DOUBLE PRECISION,
-        end_time DOUBLE PRECISION
+        end_time DOUBLE PRECISION,
+        required_capability TEXT
     )
 """
 
 _PROBE_NEWEST_COLUMN = (
     "SELECT 1 FROM information_schema.columns "
     "WHERE table_name = 'task_status' AND column_name = 'shared_payload'"
+)
+
+_PROBE_REQUIRED_CAPABILITY = (
+    "SELECT 1 FROM information_schema.columns "
+    "WHERE table_name = 'task_status' AND column_name = 'required_capability'"
 )
 
 _PROBE_FILLFACTOR = (
@@ -282,6 +289,10 @@ def ensure_schema(cur):
     cur.execute(_PROBE_NEWEST_COLUMN)
     if cur.fetchone() is None:
         cur.execute(_ADD_COLUMNS)
+    else:
+        cur.execute(_PROBE_REQUIRED_CAPABILITY)
+        if cur.fetchone() is None:
+            cur.execute("ALTER TABLE task_status ADD COLUMN IF NOT EXISTS required_capability TEXT")
 
     cur.execute(_PROBE_FILLFACTOR)
     if cur.fetchone() is None:
@@ -328,13 +339,15 @@ def _index_missing(cur, index_name):
 _INSERT_JOB = f"""
     INSERT INTO task_status (task_id, parent_task_id, task_type, sub_type_identifier,
                              status, func, payload, queue_name, priority,
-                             attempts, max_attempts, progress, details, timestamp, start_time)
-    VALUES (%s, %s, %s, %s, '{_NEW}', %s, %s, %s, %s, 0, %s, 0, %s, NOW(), NULL)
+                             attempts, max_attempts, progress, details, timestamp, start_time,
+                             required_capability)
+    VALUES (%s, %s, %s, %s, '{_NEW}', %s, %s, %s, %s, 0, %s, 0, %s, NOW(), NULL, %s)
     ON CONFLICT (task_id) DO UPDATE SET
         func = EXCLUDED.func,
         payload = EXCLUDED.payload,
         queue_name = EXCLUDED.queue_name,
         priority = EXCLUDED.priority,
+        required_capability = EXCLUDED.required_capability,
         max_attempts = EXCLUDED.max_attempts,
         parent_task_id = COALESCE(EXCLUDED.parent_task_id, task_status.parent_task_id),
         sub_type_identifier = COALESCE(EXCLUDED.sub_type_identifier,
@@ -371,7 +384,7 @@ def restore_secret_kwargs(kwargs, stripped):
 
 def insert_job(cur, task_id, task_type, func, args=None, kwargs=None, queue=QUEUE_DEFAULT,
                priority=0, parent_task_id=None, sub_type_identifier=None,
-               max_attempts=None, details=None):
+               max_attempts=None, details=None, required_capability=None):
     clean_kwargs, stripped = strip_secret_kwargs(kwargs)
     payload = json.dumps({
         'args': list(args or ()),
@@ -391,6 +404,7 @@ def insert_job(cur, task_id, task_type, func, args=None, kwargs=None, queue=QUEU
             priority,
             config.QUEUE_MAX_ATTEMPTS if max_attempts is None else int(max_attempts),
             json.dumps(details) if details is not None else None,
+            required_capability,
         ),
     )
     return cur.fetchone() is not None
@@ -420,15 +434,17 @@ _CLAIM = f"""
     WHERE task_id = (
         SELECT task_id FROM task_status
         WHERE status='{_NEW}' AND queue_name = %s
+          AND (required_capability IS NULL OR required_capability = ANY(%s))
         ORDER BY priority DESC, id
         FOR UPDATE SKIP LOCKED
         LIMIT 1)
-    RETURNING task_id, task_type, parent_task_id, func, payload, attempts, max_attempts
+    RETURNING task_id, task_type, parent_task_id, func, payload, attempts, max_attempts,
+              required_capability
 """
 
 
-def claim(cur, queue, now, worker_id=None):
-    cur.execute(_CLAIM, (worker_id, now, queue))
+def claim(cur, queue, now, worker_id=None, capabilities=()):
+    cur.execute(_CLAIM, (worker_id, now, queue, list(capabilities or ())))
     row = cur.fetchone()
     if row is None:
         return None
@@ -446,6 +462,7 @@ def claim(cur, queue, now, worker_id=None):
         'kwargs': restore_secret_kwargs(decoded.get('kwargs'), decoded.get('stripped')),
         'attempts': row[5],
         'max_attempts': row[6],
+        'required_capability': row[7] if len(row) > 7 else None,
     }
 
 
