@@ -88,6 +88,14 @@ MIGRATION_UNMATCHED_ALBUMS_PAYLOAD_LIMIT = max(1, int(os.environ.get("MIGRATION_
 # collection. The true total is preserved separately as collision_details_total.
 MIGRATION_MAX_COLLISION_DETAILS = int(os.environ.get("MIGRATION_MAX_COLLISION_DETAILS", "1000"))
 TEMP_DIR = os.environ.get("TEMP_DIR", "/app/temp_audio")
+# Opt-in staged analysis. Legacy album jobs remain the safe default until a
+# deployment has a shared artifact root and capability-labelled workers.
+ANALYSIS_PIPELINE = os.environ.get("ANALYSIS_PIPELINE", "legacy").strip().lower()
+if ANALYSIS_PIPELINE not in {"legacy", "staged", "shadow"}:
+    ANALYSIS_PIPELINE = "legacy"
+ANALYSIS_ARTIFACT_ROOT = os.environ.get(
+    "ANALYSIS_ARTIFACT_ROOT", os.path.join(TEMP_DIR, "staged")
+)
 
 
 def jellyfin_auth_header(token):

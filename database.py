@@ -1505,6 +1505,9 @@ def init_db():
             from taskqueue.sql import ensure_schema as ensure_queue_schema
 
             ensure_queue_schema(cur)
+            from tasks.analysis.stage_store import ensure_schema as ensure_analysis_stage_schema
+
+            ensure_analysis_stage_schema(cur)
             cur.execute(
                 "CREATE TABLE IF NOT EXISTS embedding (item_id TEXT PRIMARY KEY, FOREIGN KEY (item_id) REFERENCES score (item_id) ON DELETE CASCADE)"
             )

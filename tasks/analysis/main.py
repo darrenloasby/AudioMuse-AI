@@ -35,6 +35,7 @@ import taskqueue
 
 from config import (
     TEMP_DIR,
+    ANALYSIS_PIPELINE,
     MAX_QUEUED_ANALYSIS_JOBS,
     LYRICS_ENABLED,
     ANALYSIS_MONITOR_DB_INTERVAL,
@@ -444,6 +445,9 @@ def _run_analysis_server_task_impl(
                 failed_errors.append(f"Album {album}: {reason}")
 
             active_jobs = set()
+            staged_mode = ANALYSIS_PIPELINE == 'staged'
+            staged_task_album = {}
+            staged_album_remaining = {}
             albums_skipped, albums_launched, albums_completed = 0, 0, 0
             tracks_analyzed_total = [carried_over_tracks]
             last_rebuild_count = 0
@@ -463,7 +467,8 @@ def _run_analysis_server_task_impl(
                 if not child['sub_type_identifier']:
                     continue
                 active_jobs.add(child['task_id'])
-                adopted_albums.add(str(child['sub_type_identifier']))
+                if not staged_mode:
+                    adopted_albums.add(str(child['sub_type_identifier']))
             if active_jobs:
                 albums_launched += len(active_jobs)
                 logger.info(
@@ -490,10 +495,42 @@ def _run_analysis_server_task_impl(
                             active_jobs.discard(child['task_id'])
                             if not child.get('sub_type_identifier'):
                                 continue
-                            albums_completed += 1
                             child_details = child.get('details') or {}
+                            child_summary = (
+                                child_details.get('final_summary_details')
+                                if isinstance(child_details, dict) else None
+                            )
+                            if staged_mode and (
+                                (isinstance(child_details, dict)
+                                 and child_details.get('pipeline') == 'staged')
+                                or child['task_id'] in staged_task_album
+                            ):
+                                if child['status'] == TASK_STATUS_SUCCESS and isinstance(child_summary, dict):
+                                    next_task_id = child_summary.get('next_task_id')
+                                    if next_task_id:
+                                        active_jobs.add(next_task_id)
+                                        staged_task_album[next_task_id] = staged_task_album.get(
+                                            child['task_id']
+                                        )
+                                    if child_summary.get('final'):
+                                        album_key = staged_task_album.pop(child['task_id'], None)
+                                        if album_key is not None:
+                                            remaining = staged_album_remaining.get(album_key, 1) - 1
+                                            staged_album_remaining[album_key] = remaining
+                                            if remaining <= 0:
+                                                albums_completed += 1
+                                                tracks_analyzed_total[0] += 1
+                                else:
+                                    album_key = staged_task_album.pop(child['task_id'], None)
+                                    if album_key is not None:
+                                        remaining = staged_album_remaining.get(album_key, 1) - 1
+                                        staged_album_remaining[album_key] = remaining
+                                        if remaining <= 0:
+                                            albums_completed += 1
+                                    _remember_album_error(child)
+                                continue
+                            albums_completed += 1
                             if isinstance(child_details, dict):
-                                child_summary = child_details.get('final_summary_details')
                                 counted = (
                                     child_summary.get('tracks_analyzed')
                                     if isinstance(child_summary, dict) else None
@@ -609,6 +646,43 @@ def _run_analysis_server_task_impl(
                     logger.info(
                         f"Skipping album '{album.get('Name')}' (ID: {album.get('Id')}) - all {len(tracks)} tracks already analyzed ({' + '.join(status_parts)})."
                     )
+                    report_progress()
+                    continue
+
+                if staged_mode:
+                    from .stages import enqueue_track_pipeline, stages_for_work_mask
+
+                    _ah.attach_catalog_item_ids(tracks, wm_server_id)
+                    staged_count = 0
+                    for item, mask in zip(tracks, masks):
+                        stages_to_run = stages_for_work_mask(
+                            mask, clap_available, LYRICS_ENABLED
+                        )
+                        if not stages_to_run:
+                            continue
+                        first_task_id = enqueue_track_pipeline(
+                            item,
+                            run_id=current_task_id,
+                            parent_task_id=current_task_id,
+                            server_id=wm_server_id,
+                            stages_to_run=stages_to_run,
+                            album_id=album['Id'],
+                            album_name=album['Name'],
+                            top_n_moods=top_n_moods,
+                        )
+                        active_jobs.add(first_task_id)
+                        staged_task_album[first_task_id] = str(album['Id'])
+                        staged_count += 1
+                    if not staged_count:
+                        albums_skipped += 1
+                        report_progress()
+                        continue
+                    staged_album_remaining[str(album['Id'])] = staged_count
+                    albums_launched += 1
+                    albums_needing_musicnn += int(needs_musicnn_analysis)
+                    albums_needing_clap += int(needs_clap_analysis)
+                    albums_needing_lyrics += int(needs_lyrics_analysis)
+                    albums_needing_base += int(needs_base_analysis)
                     report_progress()
                     continue
 
