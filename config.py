@@ -854,6 +854,11 @@ HYPERBOLIC_JOURNEY_CANDIDATES_PER_STEP = int(os.environ.get("HYPERBOLIC_JOURNEY_
 
 # --- CLAP Model Constants (for text search) ---
 CLAP_ENABLED = os.environ.get("CLAP_ENABLED", "true").lower() == "true"
+# MusicNN can use CoreML on native macOS workers. The provider resolver still
+# appends CPU and the session factory falls back to it if CoreML rejects a model.
+MUSICNN_COREML_ENABLED = os.environ.get(
+    "MUSICNN_COREML_ENABLED", "true" if sys.platform == "darwin" else "false"
+).lower() == "true"
 # Lyrics analysis feature toggle. When false, the lyrics step is skipped entirely.
 LYRICS_ENABLED = os.environ.get("LYRICS_ENABLED", "true").lower() == "true"
 # When true, look up lyrics from user-configured external APIs before falling back to Whisper-small ASR.

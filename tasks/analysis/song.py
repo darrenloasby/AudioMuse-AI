@@ -53,6 +53,7 @@ from config import (
     AUDIO_LOAD_TIMEOUT,
     AUDIO_MIN_DECODED_FRACTION,
     MUSICNN_BATCH_SIZE,
+    MUSICNN_COREML_ENABLED,
     OTHER_FEATURE_LABELS,
     PER_SONG_MODEL_RELOAD,
     TEMPO_MAX_BPM,
@@ -159,7 +160,10 @@ def load_musicnn_sessions(model_paths):
         ):
             logger.info("Reusing resident MusiCNN models for worker lifetime")
             return _WORKER_MUSICNN_SESSIONS
-    opts = resolve_providers(allow_coreml=False, label='musicnn')
+    opts = resolve_providers(
+        allow_coreml=MUSICNN_COREML_ENABLED,
+        label='musicnn',
+    )
     try:
         sessions = {n: create_onnx_session(p, opts, label=n) for n, p in model_paths.items()}
         logger.info(f"OK Loaded {len(sessions)} MusiCNN models for album reuse")
@@ -441,7 +445,10 @@ def _patches_for_track(audio, sr, name):
 def _sessions_for_track(onnx_sessions, model_paths):
     if onnx_sessions:
         return onnx_sessions['embedding'], onnx_sessions['prediction'], False
-    provider_options = resolve_providers(label='musicnn')
+    provider_options = resolve_providers(
+        allow_coreml=MUSICNN_COREML_ENABLED,
+        label='musicnn',
+    )
     embedding_sess = create_onnx_session(
         model_paths['embedding'], provider_options, label='embedding'
     )
