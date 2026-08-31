@@ -554,8 +554,28 @@ def get_text_embeddings_batch(query_texts: list) -> Optional[np.ndarray]:
 
         onnx_inputs = {'input_ids': input_ids, 'attention_mask': attention_mask}
 
-        outputs = session.run(None, onnx_inputs)
-        text_embeddings = outputs[0]
+        coreml_batch_one = (
+            config.CLAP_TEXT_COREML_ENABLED
+            and 'CoreMLExecutionProvider' in session.get_providers()
+        )
+        if coreml_batch_one:
+            # CoreML's CLAP text graph advertises a dynamic batch dimension,
+            # but its compiled graph only accepts batch size one. Keep each
+            # request on the accelerator instead of letting the whole batch
+            # fail and silently lose the feature.
+            text_embeddings = np.concatenate(
+                [
+                    session.run(
+                        None,
+                        {name: value[index:index + 1] for name, value in onnx_inputs.items()},
+                    )[0]
+                    for index in range(len(query_texts))
+                ],
+                axis=0,
+            )
+        else:
+            outputs = session.run(None, onnx_inputs)
+            text_embeddings = outputs[0]
 
         norms = np.linalg.norm(text_embeddings, axis=1, keepdims=True)
         text_embeddings = text_embeddings / norms
