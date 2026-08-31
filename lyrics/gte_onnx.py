@@ -101,10 +101,14 @@ def load_gte_model():
         sess_options.inter_op_num_threads = 1
         try:
             from tasks.onnx_utils import create_onnx_session, resolve_providers
+            from config import LYRICS_GTE_COREML_ENABLED
 
             session = create_onnx_session(
                 onnx_path,
-                provider_options=resolve_providers(label='gte', cpu_only_default=True),
+                provider_options=resolve_providers(
+                    allow_coreml=LYRICS_GTE_COREML_ENABLED,
+                    label='gte',
+                ),
                 sess_options=sess_options,
                 label='gte',
             )

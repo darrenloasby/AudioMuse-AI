@@ -859,6 +859,15 @@ CLAP_ENABLED = os.environ.get("CLAP_ENABLED", "true").lower() == "true"
 MUSICNN_COREML_ENABLED = os.environ.get(
     "MUSICNN_COREML_ENABLED", "true" if sys.platform == "darwin" else "false"
 ).lower() == "true"
+# Text encoders are also safe to offer to CoreML on native Apple Silicon
+# workers. They retain the ONNX/CPU fallback when CoreML cannot compile a graph
+# (notably useful for quantized GTE builds).
+LYRICS_GTE_COREML_ENABLED = os.environ.get(
+    "LYRICS_GTE_COREML_ENABLED", "true" if sys.platform == "darwin" else "false"
+).lower() == "true"
+CLAP_TEXT_COREML_ENABLED = os.environ.get(
+    "CLAP_TEXT_COREML_ENABLED", "true" if sys.platform == "darwin" else "false"
+).lower() == "true"
 # Lyrics analysis feature toggle. When false, the lyrics step is skipped entirely.
 LYRICS_ENABLED = os.environ.get("LYRICS_ENABLED", "true").lower() == "true"
 # When true, look up lyrics from user-configured external APIs before falling back to Whisper-small ASR.

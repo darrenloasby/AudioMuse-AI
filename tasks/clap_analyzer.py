@@ -219,7 +219,10 @@ def _load_text_model():
     else:
         from tasks.onnx_utils import resolve_providers
 
-        provider_options = resolve_providers(label='clap_text')
+        provider_options = resolve_providers(
+            allow_coreml=config.CLAP_TEXT_COREML_ENABLED,
+            label='clap_text',
+        )
 
     try:
         session = ort.InferenceSession(
