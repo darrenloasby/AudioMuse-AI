@@ -269,3 +269,15 @@ These files are configured to automatically update AudioMuse-AI using the [lates
     systemctl --user stop audiomuse-pod
     ```
       
+# Native role lanes
+
+Native macOS workers can opt into resident model sessions with
+`MODEL_LIFETIME=worker`. MusicNN requests CoreML when
+`MUSICNN_COREML_ENABLED=true`; the session factory automatically falls back to
+CPU if the installed ONNX Runtime build cannot load the graph with CoreML.
+
+For staged analysis, set `ANALYSIS_PIPELINE=staged` on the coordinator and
+declare `AUDIOMUSE_CAPABILITIES` separately for each worker process. All
+processes must use the same PostgreSQL queue and shared artifact root. See
+`deployment/roles.example.env` for the variable contract. Keep the actual
+service files and secret references in the deployment repository.

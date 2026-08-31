@@ -131,3 +131,14 @@ All containers run on one host, communicating via the Docker network. Docker can
 - **PostgreSQL Queue**: Handles job distribution across workers
 - **PostgreSQL**: Single source of truth for all data
 - **Multiple Flask Instances**: Possible behind a load balancer. Each scheduled task row is claimed atomically for its minute, so a schedule cannot fire twice
+# Role-based analysis lanes
+
+The optional staged pipeline keeps the coordinator on the server-side process
+and routes track stages to workers by declared capability. It uses the existing
+PostgreSQL task queue, not a second broker. A track is materialised once into a
+content-addressed artifact and the following MusicNN, CLAP audio, and lyrics
+tasks pass only a reference plus small metadata. Each stage is idempotent and
+can be reclaimed independently after a worker or database interruption.
+
+`ANALYSIS_PIPELINE=legacy` remains the default. Use `staged` only when every
+worker can see `ANALYSIS_ARTIFACT_ROOT` and has a matching capability declaration.

@@ -33,3 +33,13 @@ GPU-accelerated clustering is also available through RAPIDS cuML. It can give a 
 - GPU clustering is disabled by default (`USE_GPU_CLUSTERING=false`)
 - The GPU is also used by the audio analysis models (ONNX inference)
 - The index build and the similarity queries are not GPU accelerated; they are IO bound rather than compute bound, see [ALGORITHM](ALGORITHM.md#4-similarity-indexes-disk-paged-ivf)
+# GPU execution notes
+
+The provider chain is capability-scoped. CLAP already uses the macOS CoreML
+provider; MusicNN can now opt into the same provider with
+`MUSICNN_COREML_ENABLED=true`. CPU remains the final fallback, so a provider
+problem does not make a track permanently fail.
+
+Lyrics ASR should use the existing Parakeet gateway from the lyrics worker. GTE
+remains local CPU work for now: replacing its model would invalidate the current
+lyrics embedding index and require a full re-embedding migration.
