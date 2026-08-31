@@ -81,6 +81,8 @@ MODEL_LABELS = frozenset({
     'silero_vad',
 })
 
+_COREML_NEURAL_NETWORK_LABELS = frozenset({'musicnn', 'gte'})
+
 
 def _scoped_labels(provider, key):
     value = provider.get(key)
@@ -134,7 +136,15 @@ def resolve_providers(allow_coreml=False, cuda_options=None, label=None,
                 'CoreMLExecutionProvider',
                 {
                     'MLComputeUnits': 'ALL',
-                    'ModelFormat': 'MLProgram',
+                    # MusicNN's embedding graph and the quantized GTE graph
+                    # are rejected by CoreML's MLProgram parser on macOS.
+                    # NeuralNetwork compiles both while CLAP keeps its tested
+                    # MLProgram/static-shape path.
+                    'ModelFormat': (
+                        'NeuralNetwork'
+                        if label in _COREML_NEURAL_NETWORK_LABELS
+                        else 'MLProgram'
+                    ),
                 },
             )
         )

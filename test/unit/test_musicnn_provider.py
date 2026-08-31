@@ -5,6 +5,7 @@
 from pathlib import Path
 
 import config
+from tasks import onnx_utils
 
 
 def test_macos_builds_can_enable_coreml_for_musicnn():
@@ -35,3 +36,12 @@ def test_coreml_provider_remains_optional_and_cpu_is_last_resort():
     source = Path('tasks/onnx_utils.py').read_text(encoding='utf-8')
     assert "'CoreMLExecutionProvider' in available" in source
     assert "providers=['CPUExecutionProvider']" in source
+
+
+def test_musicnn_and_gte_use_the_coreml_model_format_their_graphs_accept():
+    musicnn = dict(onnx_utils.resolve_providers(allow_coreml=True, label='musicnn'))
+    gte = dict(onnx_utils.resolve_providers(allow_coreml=True, label='gte'))
+    clap = dict(onnx_utils.resolve_providers(allow_coreml=True, label='clap'))
+    assert musicnn['CoreMLExecutionProvider']['ModelFormat'] == 'NeuralNetwork'
+    assert gte['CoreMLExecutionProvider']['ModelFormat'] == 'NeuralNetwork'
+    assert clap['CoreMLExecutionProvider']['ModelFormat'] == 'MLProgram'
